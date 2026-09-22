@@ -91,6 +91,11 @@ rm -f "$tmp_dir/power/BAT0/power_now"
 garbage_output=$(OMARCHY_POWER_SUPPLY_PATH="$tmp_dir/power" PATH="$tmp_dir/bin:$PATH" "$ROOT/bin/omarchy-battery-status" --shell)
 grep -Fx $'rate\t7.3W' <<<"$garbage_output" >/dev/null || fail "battery status keeps the UPower rate when sysfs is non-numeric"
 
+# Same for power_now itself: each guard has to earn its keep independently.
+printf 'unknown\n' >"$tmp_dir/power/BAT0/power_now"
+unknown_output=$(OMARCHY_POWER_SUPPLY_PATH="$tmp_dir/power" PATH="$tmp_dir/bin:$PATH" "$ROOT/bin/omarchy-battery-status" --shell)
+grep -Fx $'rate\t7.3W' <<<"$unknown_output" >/dev/null || fail "battery status keeps the UPower rate when power_now is non-numeric"
+
 if matches=$(rg -n 'omarchy-battery-(capacity|remaining|remaining-time)' "$ROOT/bin" "$ROOT/test" "$ROOT/shell" "$ROOT/docs"); then
   fail "battery status owns capacity and remaining calculations" "$matches"
 fi
