@@ -20,9 +20,11 @@ case "$action" in
     # query is unknown, not "on AC": fail-open here silently applies the
     # highest-power profile on machines booting on battery (#12734), so retry
     # briefly for a not-yet-ready UPower and refuse rather than guess.
+    # timeout(1) around the call: busctl's --timeout does not bound a slow
+    # method reply, so without it a wedged UPower stalls every attempt.
     on_battery=""
     for (( attempt = 1; attempt <= 5; attempt++ )); do
-      if on_battery=$(busctl --timeout=2 get-property org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower OnBattery 2>/dev/null); then
+      if on_battery=$(timeout 2s busctl get-property org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower OnBattery 2>/dev/null); then
         break
       fi
       sleep 0.5
