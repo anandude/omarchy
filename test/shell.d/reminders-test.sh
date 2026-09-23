@@ -35,9 +35,12 @@ assertDeepEqual(
 )
 
 // The typing line is a fixed one-line card: eliding must drop the head so the
-// freshly typed tail stays visible while typing (#12824).
-assert(/text: root\.filterText[\s\S]*?elide: Text\.ElideLeft/.test(flowSource),
+// freshly typed tail stays visible while typing (#12824). Scoped to the Text
+// block itself so unrelated labels cannot satisfy or break these.
+const typingBlock = flowSource.match(/Text \{[^}]*text: root\.filterText[^}]*\}/)
+assert(typingBlock, 'reminders typing line exists')
+assert(/elide: Text\.ElideLeft/.test(typingBlock[0]),
   'reminders typing line elides the head, not the tail')
-assert(!/elide: Text\.ElideRight/.test(flowSource),
+assert(!/elide: Text\.ElideRight/.test(typingBlock[0]),
   'reminders typing line keeps no head-hiding elide')
 JS
