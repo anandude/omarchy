@@ -738,3 +738,31 @@ chmod +x "$PATHBIN_DIR/omarchy-weird-test"
 
 output=$(PATH="$PATHBIN_DIR:$PATH" "$TMPDIR/omarchy" weird test)
 assert_output_contains "checkout binary wins over PATH" "$output" "weird-ok"
+
+# PATH fallback resolves only after checkout metadata and group resolution, so
+# checkout aliases and group help win over a same-named PATH entry.
+{
+  printf '#!/bin/bash\n\n'
+  printf 'echo path-shadowed-wrong\n'
+} >"$PATHBIN_DIR/omarchy-parenthelp-alias"
+chmod +x "$PATHBIN_DIR/omarchy-parenthelp-alias"
+
+output=$(PATH="$PATHBIN_DIR:$PATH" "$TMPDIR/omarchy" parenthelp-alias somearg)
+assert_output_contains "checkout alias wins over PATH" "$output" "parenthelp-parent-ran args=[somearg]"
+if [[ $output == *"path-shadowed-wrong"* ]]; then
+  fail "checkout alias wins over PATH"
+fi
+pass "checkout alias wins over PATH"
+
+{
+  printf '#!/bin/bash\n\n'
+  printf 'echo path-shadowed-wrong\n'
+} >"$PATHBIN_DIR/omarchy-weird"
+chmod +x "$PATHBIN_DIR/omarchy-weird"
+
+output=$(PATH="$PATHBIN_DIR:$PATH" "$TMPDIR/omarchy" weird)
+assert_output_contains "checkout group wins over PATH" "$output" "omarchy weird test"
+if [[ $output == *"path-shadowed-wrong"* ]]; then
+  fail "checkout group wins over PATH"
+fi
+pass "checkout group wins over PATH"
