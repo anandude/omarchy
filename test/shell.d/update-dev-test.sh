@@ -59,9 +59,11 @@ run_dev_update /usr/share/omarchy
 pass "package-backed updates skip the dev checkout step"
 
 # A stripped environment (sudo, cron/timer, non-bash shells) exports no
-# OMARCHY_PATH: that means package-backed, not a crash (#12858).
+# OMARCHY_PATH: that means package-backed, not a crash (#12858). The stub log
+# destination rides along so a git call on this path cannot hide from the
+# assertion below.
 : >"$git_log"
-if ! env -i PATH="$stub_bin:/usr/bin:/bin" "$ROOT/bin/omarchy-update-dev" 2>"$test_tmp/stripped.err"; then
+if ! env -i PATH="$stub_bin:/usr/bin:/bin" TEST_GIT_LOG="$git_log" "$ROOT/bin/omarchy-update-dev" 2>"$test_tmp/stripped.err"; then
   fail "update-dev without OMARCHY_PATH exits cleanly" "$(cat "$test_tmp/stripped.err")"
 fi
 [[ ! -s $git_log ]] || fail "update-dev without OMARCHY_PATH invokes no git" "$(cat "$git_log")"
