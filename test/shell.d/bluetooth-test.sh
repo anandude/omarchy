@@ -189,6 +189,8 @@ fi
 # RFKILL_BLOCK_FAIL stands in for an unfixable block (e.g. readable /dev/rfkill
 # without write permission): listing succeeds while blocking fails.
 [[ $1 == "block" && ${RFKILL_BLOCK_FAIL:-0} == "1" ]] && exit 1
+# RFKILL_BLOCK_FAIL_IDS fails only the listed adapter indexes.
+[[ $1 == "block" && -n ${RFKILL_BLOCK_FAIL_IDS:-} && " ${RFKILL_BLOCK_FAIL_IDS} " == *" $2 "* ]] && exit 1
 [[ $1 == "block" ]] && echo no >"$POWERED_FILE"
 exit 0
 SH
@@ -331,6 +333,39 @@ fi
 grep -qx "rfkill block 1" "$device_tmp/log" ||
   fail "bluetooth attempts the adapter block before failing" "$(cat "$device_tmp/log")"
 pass "bluetooth reports a failed adapter block"
+
+# A partial failure still fails the command: every adapter is attempted and no
+# type-wide escalation papers over the failure.
+two_adapter_rfkill_list="0 tpacpi_bluetooth_sw
+1 hci0
+2 hci1"
+
+echo yes >"$POWERED_FILE"
+: >"$device_tmp/log"
+if RFKILL_BLOCK_FAIL_IDS="1" MOCK_RFKILL_LIST="$two_adapter_rfkill_list" \
+  PATH="$mock_bin:$ROOT/bin:$PATH" BLUETOOTHCTL_LOG="$device_tmp/log" \
+  OMARCHY_BLUETOOTH_POWER_WAIT_SECONDS=0 "$ROOT/bin/omarchy-bluetooth-power" off; then
+  fail "bluetooth reports a partially failed adapter block" "$(cat "$device_tmp/log")"
+fi
+grep -qx "rfkill block 1" "$device_tmp/log" ||
+  fail "bluetooth attempts the failing adapter" "$(cat "$device_tmp/log")"
+grep -qx "rfkill block 2" "$device_tmp/log" ||
+  fail "bluetooth attempts every adapter despite a failure" "$(cat "$device_tmp/log")"
+grep -q "rfkill block bluetooth" "$device_tmp/log" &&
+  fail "bluetooth does not escalate a partial failure to a type-wide block" "$(cat "$device_tmp/log")"
+pass "bluetooth reports a partially failed adapter block"
+
+# A failing fallback is a failure too.
+echo yes >"$POWERED_FILE"
+: >"$device_tmp/log"
+if RFKILL_BLOCK_FAIL=1 MOCK_RFKILL_LIST="$platform_only_rfkill_list" \
+  PATH="$mock_bin:$ROOT/bin:$PATH" BLUETOOTHCTL_LOG="$device_tmp/log" \
+  OMARCHY_BLUETOOTH_POWER_WAIT_SECONDS=0 "$ROOT/bin/omarchy-bluetooth-power" off; then
+  fail "bluetooth reports a failed fallback block" "$(cat "$device_tmp/log")"
+fi
+grep -qx "rfkill block bluetooth" "$device_tmp/log" ||
+  fail "bluetooth attempts the fallback block before failing" "$(cat "$device_tmp/log")"
+pass "bluetooth reports a failed fallback block"
 
 # AutoEnable=false was the old attempt at persistence and never worked. Left set,
 # it would also keep bluetoothd from powering the adapter up after an unblock.
