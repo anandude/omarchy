@@ -55,6 +55,20 @@ theme_color() {
   omarchy-theme-color --file "$COLORS_TOML" "$@"
 }
 
+# Whether an attached client runs a terminal that reloads its own config on
+# theme change (ghostty, kitty). With no clients attached there is nothing to
+# ask, so callers keep their current behavior.
+tmux_clients_reload_config() {
+  local termname
+
+  while IFS= read -r termname; do
+    case $termname in
+    *ghostty* | *kitty*) return 0 ;;
+    esac
+  done < <(tmux list-clients -F "#{client_termname}" 2>/dev/null)
+  return 1
+}
+
 sync_tmux_window_style() {
   local background foreground cursor
 
@@ -66,8 +80,14 @@ sync_tmux_window_style() {
 
   [[ -n $foreground && -n $background ]] || return
 
-  tmux set-option -g window-style "fg=$foreground,bg=$background" 2>/dev/null || true
-  tmux set-option -g window-active-style "fg=$foreground,bg=$background" 2>/dev/null || true
+  # Ghostty and kitty reload their own config on theme change, so stamping an
+  # explicit background through tmux is redundant for them — and destructive:
+  # terminal transparency only blends cells using the default background, so a
+  # stamped bg turns every pane opaque for its lifetime.
+  if ! tmux_clients_reload_config; then
+    tmux set-option -g window-style "fg=$foreground,bg=$background" 2>/dev/null || true
+    tmux set-option -g window-active-style "fg=$foreground,bg=$background" 2>/dev/null || true
+  fi
 
   # Apps like nvim clear the per-pane cursor colour with OSC 112. Without a
   # global fallback, tmux then resets the outer terminal's cursor, which in
@@ -82,6 +102,10 @@ sync_tmux_pane_colors() {
   local pane_tty theme_osc
 
   [[ -f $COLORS_TOML ]] || return
+
+  # Same transparency reason as the window-style skip above: the OSC push
+  # lands an explicit background on every cell of self-reloading terminals.
+  tmux_clients_reload_config && return
 
   theme_osc=$(theme_osc_sequences)
   [[ -n $theme_osc ]] || return
