@@ -8,6 +8,9 @@ run_node_test <<'JS'
 const fs = require('fs')
 const calendar = requireFromRoot('shell/plugins/panels/clock/Model.js')
 const modelSource = fs.readFileSync(root + '/shell/plugins/panels/clock/Model.js', 'utf8')
+  // Comments stripped, like the widget source below: a pin a commented-out
+  // line can satisfy passes while the grid is broken.
+  .replace(/^\s*\/\/.*$/gm, '')
 const panelSource = fs.readFileSync(root + '/shell/plugins/panels/clock/Panel.qml', 'utf8')
 // Comments stripped: a wiring assertion that a commented-out line can satisfy
 // passes while the widget is broken.
@@ -134,6 +137,7 @@ assertDeepEqual(september.map(week => week.week), [36, 37, 38, 39, 40, 41], 'cal
 assert(/new Date\(year, month, 1, 12\)\.getDay\(\)/.test(modelSource), 'calendar counts leading days from a noon that always exists')
 assert(/new Date\(year, month, 1 - leading, 12\)/.test(modelSource), 'calendar walks the grid from noon across midnight DST switches')
 assert(/new Date\(year, Number\(month\) \+ Number\(delta\), 1, 12\)/.test(modelSource), 'calendar steps months from a noon that always exists')
+assert(/readonly property date viewDate: new Date\(viewYear, viewMonth, 1, 12\)/.test(panelSource), 'calendar names the heading month from a noon that always exists')
 
 // ---- stepping
 assertDeepEqual(calendar.stepMonth(2026, 0, 1), { year: 2026, month: 1 }, 'calendar steps to the next month')
