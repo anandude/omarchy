@@ -56,8 +56,9 @@ theme_color() {
 }
 
 # Whether an attached client runs a terminal that reloads its own config on
-# theme change (ghostty, kitty). With no clients attached there is nothing to
-# ask, so callers keep their current behavior.
+# theme change (ghostty, kitty). The skipped settings below apply to the whole
+# server, so one matching client decides for every session on it; with no
+# clients attached there is nothing to ask, so callers keep stamping.
 tmux_clients_reload_config() {
   local termname
 
@@ -67,6 +68,36 @@ tmux_clients_reload_config() {
     esac
   done < <(tmux list-clients -F "#{client_termname}" 2>/dev/null)
   return 1
+}
+
+# Record of the last stamped styles, so the skip path only unsets values this
+# script wrote and never a window-style the user set in tmux.conf.
+record_tmux_window_style() {
+  local style="$1"
+  local value="$2"
+
+  tmux set-option -g "@omarchy_$style" "$value" 2>/dev/null || true
+}
+
+# Undo an earlier stamp: reset each pane's palette and default colors, then
+# unset the global styles. The style change has to come after the pane writes
+# for tmux to pick up the reset palette.
+clear_tmux_window_style() {
+  local pair key record current recorded pane_tty
+
+  while IFS= read -r pane_tty; do
+    [[ $pane_tty == /dev/pts/* ]] || continue
+    printf '\033]104\007\033]110\007\033]111\007' >"$pane_tty" 2>/dev/null || true
+  done < <(tmux list-panes -a -F "#{pane_tty}" 2>/dev/null | sort -u)
+
+  for pair in "window-style window_style" "window-active-style window_active_style"; do
+    read -r key record <<<"$pair"
+    current=$(tmux show-option -gv "$key" 2>/dev/null) || continue
+    recorded=$(tmux show-option -gv "@omarchy_$record" 2>/dev/null) || continue
+    [[ $current == "$recorded" ]] || continue
+    tmux set-option -gu "$key" 2>/dev/null || true
+    tmux set-option -gu "@omarchy_$record" 2>/dev/null || true
+  done
 }
 
 sync_tmux_window_style() {
@@ -84,9 +115,16 @@ sync_tmux_window_style() {
   # explicit background through tmux is redundant for them — and destructive:
   # terminal transparency only blends cells using the default background, so a
   # stamped bg turns every pane opaque for its lifetime.
-  if ! tmux_clients_reload_config; then
+  if tmux_clients_reload_config; then
+    # Skipping new stamps is not enough: an earlier run (before the upgrade,
+    # while detached, or under another terminal) may have stamped the previous
+    # theme, which would then stick. Clear only what this script wrote.
+    clear_tmux_window_style
+  else
     tmux set-option -g window-style "fg=$foreground,bg=$background" 2>/dev/null || true
+    record_tmux_window_style window_style "fg=$foreground,bg=$background"
     tmux set-option -g window-active-style "fg=$foreground,bg=$background" 2>/dev/null || true
+    record_tmux_window_style window_active_style "fg=$foreground,bg=$background"
   fi
 
   # Apps like nvim clear the per-pane cursor colour with OSC 112. Without a
