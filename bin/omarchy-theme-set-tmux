@@ -79,15 +79,15 @@ record_tmux_window_style() {
   tmux set-option -g "@omarchy_$style" "$value" 2>/dev/null || true
 }
 
-# Undo an earlier stamp: reset each pane's palette and default colors, then
-# unset the global styles. The style change has to come after the pane writes
-# for tmux to pick up the reset palette.
+# Undo an earlier stamp: reset the palette entries, default colors and cursor
+# the push set in each pane, then unset the global styles. The style change has
+# to come after the pane writes for tmux to pick up the reset palette.
 clear_tmux_window_style() {
   local pair key record current recorded pane_tty
 
   while IFS= read -r pane_tty; do
     [[ $pane_tty == /dev/pts/* ]] || continue
-    printf '\033]104\007\033]110\007\033]111\007' >"$pane_tty" 2>/dev/null || true
+    printf '\033]104;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15\007\033]110\007\033]111\007\033]112\007' >"$pane_tty" 2>/dev/null || true
   done < <(tmux list-panes -a -F "#{pane_tty}" 2>/dev/null | sort -u)
 
   for pair in "window-style window_style" "window-active-style window_active_style"; do
