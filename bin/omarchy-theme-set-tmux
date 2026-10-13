@@ -11,17 +11,62 @@ if ! tmux list-sessions >/dev/null 2>&1; then
   exit 0
 fi
 
-set_tmux_environment() {
+# Every setting reaches the tmux server as one script. A tmux client per
+# variable per session costs several hundred forks on each theme switch.
+TMUX_COMMANDS=()
+TMUX_SESSIONS=()
+CLIENTS_RELOAD_CONFIG=false
+declare -A THEME_COLORS=()
+
+# tmux takes single-quoted text literally; a single quote inside one closes
+# it, joins a double-quoted quote, and reopens it. The quoting stays in this
+# shell: a command substitution per argument would fork once per argument.
+queue_tmux_command() {
+  local argument quoted line="" quote="'"
+
+  for argument in "$@"; do
+    quoted="${argument//$quote/$quote\"$quote\"$quote}"
+    line+="${line:+ }$quote$quoted$quote"
+  done
+
+  TMUX_COMMANDS+=("$line")
+}
+
+queue_tmux_environment() {
   local key="$1"
   local value="$2"
   local session
 
-  tmux set-environment -g "$key" "$value" 2>/dev/null || return 0
+  queue_tmux_command set-environment -g "$key" "$value"
+
+  for session in "${TMUX_SESSIONS[@]}"; do
+    queue_tmux_command set-environment -t "$session" "$key" "$value"
+  done
+}
+
+# source-file reports a line that fails, such as a session that closed in the
+# meantime, and carries on with the rest.
+apply_tmux_commands() {
+  (( ${#TMUX_COMMANDS[@]} > 0 )) || return 0
+
+  printf '%s\n' "${TMUX_COMMANDS[@]}" | tmux source-file - >/dev/null 2>&1 || true
+}
+
+load_tmux_sessions() {
+  local session
 
   while IFS= read -r session; do
-    [[ -n $session ]] || continue
-    tmux set-environment -t "$session" "$key" "$value" 2>/dev/null || true
+    [[ -n $session ]] && TMUX_SESSIONS+=("$session")
   done < <(tmux list-sessions -F "#{session_id}" 2>/dev/null)
+}
+
+# One resolver run covers every colour below.
+load_theme_colors() {
+  local key value
+
+  while IFS=$'\t' read -r key value; do
+    THEME_COLORS[$key]="$value"
+  done < <(omarchy-theme-color --file "$COLORS_TOML" --all 2>/dev/null)
 }
 
 sync_theme_environment() {
@@ -31,100 +76,89 @@ sync_theme_environment() {
 
   while IFS=$'\t' read -r key value; do
     [[ -n $key && -n $value ]] || continue
-    set_tmux_environment "$key" "$value"
+    queue_tmux_environment "$key" "$value"
   done < <(awk -F'"' '/hl\.env\("[A-Z0-9_]+", "[^"]+"\)/ { print $2 "\t" $4 }' "$GUM_ENV")
 }
 
 sync_colorfgbg() {
   local colorfgbg="15;0"
 
-  # theme_color resolves mode from colors.toml, a legacy light.mode file, or
-  # background luminance, so a bare light check covers all theme styles.
-  if [[ $(theme_color mode) == "light" ]]; then
+  # omarchy-theme-color resolves mode from colors.toml, a legacy light.mode
+  # file, or background luminance, so a bare light check covers all theme styles.
+  if [[ ${THEME_COLORS[mode]} == "light" ]]; then
     colorfgbg="0;15"
   fi
 
-  set_tmux_environment COLORFGBG "$colorfgbg"
+  queue_tmux_environment COLORFGBG "$colorfgbg"
 }
 
 theme_osc_sequences() {
   omarchy-theme-osc "$COLORS_TOML"
 }
 
-theme_color() {
-  omarchy-theme-color --file "$COLORS_TOML" "$@"
-}
-
 # Whether an attached client runs a terminal that reloads its own config on
 # theme change (ghostty, kitty). The skipped settings below apply to the whole
 # server, so one matching client decides for every session on it; with no
 # clients attached there is nothing to ask, so callers keep stamping.
-tmux_clients_reload_config() {
+load_tmux_clients() {
   local termname
 
   while IFS= read -r termname; do
     case $termname in
-    *ghostty* | *kitty*) return 0 ;;
+    *ghostty* | *kitty*) CLIENTS_RELOAD_CONFIG=true ;;
     esac
   done < <(tmux list-clients -F "#{client_termname}" 2>/dev/null)
-  return 1
 }
 
-# Record of the last stamped styles, so the skip path only unsets values this
+# Stamp a style and record it, so the skip path only unsets values this
 # script wrote and never a window-style the user set in tmux.conf.
-record_tmux_window_style() {
+stamp_tmux_window_style() {
   local style="$1"
   local value="$2"
 
-  tmux set-option -g "@omarchy_$style" "$value" 2>/dev/null || true
+  queue_tmux_command set-option -g "$style" "$value"
+  queue_tmux_command set-option -g "@omarchy_${style//-/_}" "$value"
 }
 
 # Undo an earlier stamp: reset the palette entries, default colors and cursor
-# the push set in each pane, then unset the global styles. The style change has
-# to come after the pane writes for tmux to pick up the reset palette.
+# the push set in each pane now, then queue the style unsets. The style change
+# has to come after the pane writes for tmux to pick up the reset palette.
 clear_tmux_window_style() {
-  local pair key record current recorded pane_tty
+  local style current recorded pane_tty
 
   while IFS= read -r pane_tty; do
     [[ $pane_tty == /dev/pts/* ]] || continue
     printf '\033]104;0;1;2;3;4;5;6;7;8;9;10;11;12;13;14;15\007\033]110\007\033]111\007\033]112\007' >"$pane_tty" 2>/dev/null || true
   done < <(tmux list-panes -a -F "#{pane_tty}" 2>/dev/null | sort -u)
 
-  for pair in "window-style window_style" "window-active-style window_active_style"; do
-    read -r key record <<<"$pair"
-    current=$(tmux show-option -gv "$key" 2>/dev/null) || continue
-    recorded=$(tmux show-option -gv "@omarchy_$record" 2>/dev/null) || continue
+  for style in window-style window-active-style; do
+    current=$(tmux show-option -gv "$style" 2>/dev/null) || continue
+    recorded=$(tmux show-option -gv "@omarchy_${style//-/_}" 2>/dev/null) || continue
     [[ $current == "$recorded" ]] || continue
-    tmux set-option -gu "$key" 2>/dev/null || true
-    tmux set-option -gu "@omarchy_$record" 2>/dev/null || true
+    queue_tmux_command set-option -gu "$style"
+    queue_tmux_command set-option -gu "@omarchy_${style//-/_}"
   done
 }
 
 sync_tmux_window_style() {
-  local background foreground cursor
+  local foreground="${THEME_COLORS[foreground]}"
+  local background="${THEME_COLORS[background]}"
+  local cursor="${THEME_COLORS[cursor]}"
 
-  [[ -f $COLORS_TOML ]] || return
-
-  foreground=$(theme_color foreground)
-  background=$(theme_color background)
-  cursor=$(theme_color cursor)
-
-  [[ -n $foreground && -n $background ]] || return
+  [[ -f $COLORS_TOML && -n $foreground && -n $background ]] || return
 
   # Ghostty and kitty reload their own config on theme change, so stamping an
   # explicit background through tmux is redundant for them — and destructive:
   # terminal transparency only blends cells using the default background, so a
   # stamped bg turns every pane opaque for its lifetime.
-  if tmux_clients_reload_config; then
+  if [[ $CLIENTS_RELOAD_CONFIG == true ]]; then
     # Skipping new stamps is not enough: an earlier run (before the upgrade,
     # while detached, or under another terminal) may have stamped the previous
     # theme, which would then stick. Clear only what this script wrote.
     clear_tmux_window_style
   else
-    tmux set-option -g window-style "fg=$foreground,bg=$background" 2>/dev/null || true
-    record_tmux_window_style window_style "fg=$foreground,bg=$background"
-    tmux set-option -g window-active-style "fg=$foreground,bg=$background" 2>/dev/null || true
-    record_tmux_window_style window_active_style "fg=$foreground,bg=$background"
+    stamp_tmux_window_style window-style "fg=$foreground,bg=$background"
+    stamp_tmux_window_style window-active-style "fg=$foreground,bg=$background"
   fi
 
   # Apps like nvim clear the per-pane cursor colour with OSC 112. Without a
@@ -132,7 +166,7 @@ sync_tmux_window_style() {
   # terminals that can't reload their config (foot) restores the colour from
   # whatever theme was active when the terminal launched.
   if [[ -n $cursor ]]; then
-    tmux set-option -g cursor-colour "$cursor" 2>/dev/null || true
+    queue_tmux_command set-option -g cursor-colour "$cursor"
   fi
 }
 
@@ -143,7 +177,7 @@ sync_tmux_pane_colors() {
 
   # Same transparency reason as the window-style skip above: the OSC push
   # lands an explicit background on every cell of self-reloading terminals.
-  tmux_clients_reload_config && return
+  [[ $CLIENTS_RELOAD_CONFIG == true ]] && return
 
   theme_osc=$(theme_osc_sequences)
   [[ -n $theme_osc ]] || return
@@ -174,9 +208,14 @@ refresh_tmux_clients() {
   done < <(tmux list-clients -F "#{client_name}" 2>/dev/null)
 }
 
+load_tmux_sessions
+load_tmux_clients
+load_theme_colors
+
 sync_theme_environment
 sync_colorfgbg
 sync_tmux_window_style
+apply_tmux_commands
 sync_tmux_pane_colors
 signal_tmux_panes
 refresh_tmux_clients
