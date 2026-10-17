@@ -61,6 +61,8 @@ power_rate_raw=$(awk '/energy-rate/ { print $2; exit }' <<<"$battery_info")
 native_path=$(awk '/native-path/ { print $2; exit }' <<<"$battery_info")
 battery_path="$power_supply_path/$native_path"
 
+# UPower's energy-rate can lag the kernel telemetry by tens of seconds. Use
+# the instantaneous sysfs reading when available so the open panel stays live.
 # Readability alone is not enough: a node can exist yet fail to read (ENODEV
 # on some hardware), and an unreadable or non-numeric value must never
 # clobber the good UPower rate with 0W (#12735, #6895).
