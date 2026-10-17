@@ -24,7 +24,7 @@ done
 SH
 chmod +x "$stage/bin/omarchy-network-speedtest"
 
-output=$(PATH="$stage/bin:$PATH" timeout 16 quickshell -p "$stage" --no-color 2>&1) || fail "network speed test warm-up exits cleanly" "$output"
+output=$(PATH="$stage/bin:$PATH" timeout 30 quickshell -p "$stage" --no-color 2>&1) || fail "network speed test warm-up exits cleanly" "$output"
 [[ $output == *"RESULT pass"* ]] || fail "the speed test measures from the first sample, not from launch" "$output"
 if rg -q 'RESULT fail|ReferenceError|TypeError|Unable to assign|Binding loop' <<<"$output"; then
   fail "network speed test warm-up has no QML errors" "$output"

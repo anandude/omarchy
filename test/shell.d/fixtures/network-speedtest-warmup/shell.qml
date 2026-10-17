@@ -11,24 +11,47 @@ ShellRoot {
       console.log("RESULT fail " + message + " (phase=" + panel.phase + " down=" + panel.downloadValue + " up=" + panel.uploadValue + ")")
     }
   }
+  function finish() {
+    if (!test.failed) console.log("RESULT pass")
+    Qt.quit()
+  }
 
-  SpeedTest.Panel { id: panel }
+  SpeedTest.Panel {
+    id: panel
+    // The stub helper reports its first sample 5.5s after launch. The checks
+    // count from that sample, so a slow start cannot fail them.
+    onDownloadValueChanged: {
+      if (downloadValue !== 42 || deadline.sampled) return
+      deadline.sampled = true
+      deadline.stop()
+      measuring.start()
+      closed.start()
+    }
+  }
 
   Component.onCompleted: panel.open('{"connection": "Test"}')
 
-  // The stub helper reports its first sample 5.5s after launch.
   Timer {
-    interval: 7500
-    running: true
-    onTriggered: test.check(panel.phase === "down" && panel.downloadValue === 42, "a slow warm-up still measures the download")
+    id: measuring
+    interval: 2500
+    onTriggered: test.check(panel.phase === "down", "the download window stays open after its first sample")
   }
   Timer {
-    interval: 12500
-    running: true
+    id: closed
+    interval: 7500
     onTriggered: {
       test.check(panel.phase === "up" && panel.downloadValue === 42, "the download window closes five seconds after its first sample")
-      if (!test.failed) console.log("RESULT pass")
-      Qt.quit()
+      test.finish()
+    }
+  }
+  Timer {
+    id: deadline
+    property bool sampled: false
+    interval: 15000
+    running: true
+    onTriggered: {
+      test.check(false, "a slow warm-up still measures the download")
+      test.finish()
     }
   }
 }
