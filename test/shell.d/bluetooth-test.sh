@@ -173,7 +173,13 @@ cat >"$mock_bin/rfkill" <<'SH'
 
 printf 'rfkill %s\n' "$*" >>"$BLUETOOTHCTL_LOG"
 # Named-column listing stands in for `rfkill -n -o ID,DEVICE list bluetooth`.
-# Empty by default so the type-wide fallback carries the legacy assertions.
+# Empty by default, which is a listing that succeeded and named no switch: the
+# one case that still takes the type-wide block.
+if [[ -n ${MOCK_RFKILL_LIST_FAIL:-} ]]; then
+  for arg in "$@"; do
+    [[ $arg == "list" ]] && exit 1
+  done
+fi
 if [[ -n ${MOCK_RFKILL_LIST:-} ]]; then
   for arg in "$@"; do
     if [[ $arg == "list" ]]; then
@@ -313,13 +319,24 @@ grep -qx "rfkill block 1" "$scoped_toggle_log" ||
   fail "bluetooth toggles a powered adapter off by index" "$(cat "$scoped_toggle_log")"
 pass "bluetooth toggles a powered adapter off by index"
 
-# With no HCI switch in sight the type-wide block is all there is.
+# A platform switch on its own is not a reason to block the type: the
+# type-wide block is what trips it (#7936), which is the whole point of the
+# per-adapter block. With no HCI switch there, off issues no block at all and
+# still succeeds.
 platform_only_rfkill_list="0 tpacpi_bluetooth_sw"
 
-fallback_log=$(MOCK_RFKILL_LIST="$platform_only_rfkill_list" bluetooth_power yes off)
-grep -qx "rfkill block bluetooth" "$fallback_log" ||
-  fail "bluetooth falls back to the type-wide block without adapters" "$(cat "$fallback_log")"
-pass "bluetooth falls back to the type-wide block without adapters"
+platform_only_log=$(MOCK_RFKILL_LIST="$platform_only_rfkill_list" bluetooth_power yes off)
+grep -q "rfkill block" "$platform_only_log" &&
+  fail "bluetooth issues no block when only a platform switch is listed" "$(cat "$platform_only_log")"
+pass "bluetooth issues no block when only a platform switch is listed"
+
+# Nothing listed at all is the one case the type-wide block is kept for: there
+# is no platform switch to trip, and it still holds off an adapter that
+# registers after this off.
+empty_log=$(bluetooth_power yes off)
+grep -qx "rfkill block bluetooth" "$empty_log" ||
+  fail "bluetooth keeps the type-wide block when the listing is empty" "$(cat "$empty_log")"
+pass "bluetooth keeps the type-wide block when the listing is empty"
 
 # A block the kernel refuses must fail the command: callers otherwise take an
 # unchanged radio for a switched-off one.
@@ -355,17 +372,29 @@ grep -q "rfkill block bluetooth" "$device_tmp/log" &&
   fail "bluetooth does not escalate a partial failure to a type-wide block" "$(cat "$device_tmp/log")"
 pass "bluetooth reports a partially failed adapter block"
 
-# A failing fallback is a failure too.
+# A listing that fails is not a listing that named nothing: the failed read may
+# have missed a platform switch it never showed, so it must not become a
+# type-wide block. Off leaves the radio alone and still succeeds.
 echo yes >"$POWERED_FILE"
 : >"$device_tmp/log"
-if RFKILL_BLOCK_FAIL=1 MOCK_RFKILL_LIST="$platform_only_rfkill_list" \
-  PATH="$mock_bin:$ROOT/bin:$PATH" BLUETOOTHCTL_LOG="$device_tmp/log" \
+MOCK_RFKILL_LIST_FAIL=1 PATH="$mock_bin:$ROOT/bin:$PATH" BLUETOOTHCTL_LOG="$device_tmp/log" \
+  OMARCHY_BLUETOOTH_POWER_WAIT_SECONDS=0 "$ROOT/bin/omarchy-bluetooth-power" off ||
+  fail "bluetooth exits cleanly when the listing fails"
+grep -q "rfkill block" "$device_tmp/log" &&
+  fail "bluetooth issues no block when the listing fails" "$(cat "$device_tmp/log")"
+pass "bluetooth issues no block when the listing fails"
+
+# The empty listing is the one case that still blocks the type, so a kernel
+# that refuses that block has to fail the command like any other.
+echo yes >"$POWERED_FILE"
+: >"$device_tmp/log"
+if RFKILL_BLOCK_FAIL=1 PATH="$mock_bin:$ROOT/bin:$PATH" BLUETOOTHCTL_LOG="$device_tmp/log" \
   OMARCHY_BLUETOOTH_POWER_WAIT_SECONDS=0 "$ROOT/bin/omarchy-bluetooth-power" off; then
-  fail "bluetooth reports a failed fallback block" "$(cat "$device_tmp/log")"
+  fail "bluetooth reports a failed type-wide block" "$(cat "$device_tmp/log")"
 fi
 grep -qx "rfkill block bluetooth" "$device_tmp/log" ||
-  fail "bluetooth attempts the fallback block before failing" "$(cat "$device_tmp/log")"
-pass "bluetooth reports a failed fallback block"
+  fail "bluetooth attempts the type-wide block before failing" "$(cat "$device_tmp/log")"
+pass "bluetooth reports a failed type-wide block"
 
 # AutoEnable=false was the old attempt at persistence and never worked. Left set,
 # it would also keep bluetoothd from powering the adapter up after an unblock.

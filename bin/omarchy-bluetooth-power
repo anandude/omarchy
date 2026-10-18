@@ -69,25 +69,41 @@ power_on() {
 # adapter leaves the bus instead of going Powered: no, and nothing can bring
 # it back from the panel (#7936). The per-adapter soft block still drops the
 # adapter to Powered: no, and systemd-rfkill persists it under the adapter's
-# own ID, so off survives a reboot the same way. With no HCI switch in sight
-# (no radio, or an already-removed one) fall back to the type-wide block.
+# own device path, so off survives a reboot the same way.
+#
+# The type-wide block is left for one case only: a listing that succeeded and
+# named no switch at all. With no switch listed there is no platform switch to
+# trip, and the block still holds off an adapter that registers later, which
+# `off` before the adapter exists would otherwise fail to do. A listing that
+# named only platform switches, or that failed, must not block the type.
 block_adapters() {
   local id=""
   local attempted=0
   local failed=0
 
+  # Keep the listing and its status apart: succeeding with no switches named
+  # is not the same as failing to list.
+  local listing
+  local listed=0
+  listing=$(rfkill -n -o ID,DEVICE list bluetooth 2>/dev/null) || listed=$?
+
   while read -r id _; do
     [[ -n $id ]] || continue
     attempted=$((attempted + 1))
     rfkill block "$id" || failed=$((failed + 1))
-  done < <(rfkill -n -o ID,DEVICE list bluetooth 2>/dev/null | awk '$2 ~ /^hci/ {print $1}')
+  done < <(awk '$2 ~ /^hci/ {print $1}' <<<"$listing")
 
-  if (( attempted == 0 )); then
+  if (( attempted > 0 )); then
+    (( failed == 0 ))
+    return
+  fi
+
+  if (( listed == 0 )) && [[ -z ${listing//[[:space:]]/} ]]; then
     rfkill block bluetooth
     return $?
   fi
 
-  (( failed == 0 ))
+  return 0
 }
 
 case "${1:-}" in
