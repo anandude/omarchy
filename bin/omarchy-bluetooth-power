@@ -81,11 +81,10 @@ block_adapters() {
   local attempted=0
   local failed=0
 
-  # Keep the listing and its status apart: succeeding with no switches named
-  # is not the same as failing to list.
+  # A listing that failed is not one that named nothing: block nothing, and fail,
+  # since the radio is still on.
   local listing
-  local listed=0
-  listing=$(rfkill -n -o ID,DEVICE list bluetooth 2>/dev/null) || listed=$?
+  listing=$(rfkill -n -o ID,DEVICE list bluetooth) || return
 
   while read -r id _; do
     [[ -n $id ]] || continue
@@ -98,7 +97,7 @@ block_adapters() {
     return
   fi
 
-  if (( listed == 0 )) && [[ -z ${listing//[[:space:]]/} ]]; then
+  if [[ -z ${listing//[[:space:]]/} ]]; then
     rfkill block bluetooth
     return $?
   fi

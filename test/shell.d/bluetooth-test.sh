@@ -374,12 +374,13 @@ pass "bluetooth reports a partially failed adapter block"
 
 # A listing that fails is not a listing that named nothing: the failed read may
 # have missed a platform switch it never showed, so it must not become a
-# type-wide block. Off leaves the radio alone and still succeeds.
+# type-wide block. Off leaves the radio alone, and fails, since it is still on.
 echo yes >"$POWERED_FILE"
 : >"$device_tmp/log"
-MOCK_RFKILL_LIST_FAIL=1 PATH="$mock_bin:$ROOT/bin:$PATH" BLUETOOTHCTL_LOG="$device_tmp/log" \
-  OMARCHY_BLUETOOTH_POWER_WAIT_SECONDS=0 "$ROOT/bin/omarchy-bluetooth-power" off ||
-  fail "bluetooth exits cleanly when the listing fails"
+if MOCK_RFKILL_LIST_FAIL=1 PATH="$mock_bin:$ROOT/bin:$PATH" BLUETOOTHCTL_LOG="$device_tmp/log" \
+  OMARCHY_BLUETOOTH_POWER_WAIT_SECONDS=0 "$ROOT/bin/omarchy-bluetooth-power" off; then
+  fail "bluetooth reports a failed listing" "$(cat "$device_tmp/log")"
+fi
 grep -q "rfkill block" "$device_tmp/log" &&
   fail "bluetooth issues no block when the listing fails" "$(cat "$device_tmp/log")"
 pass "bluetooth issues no block when the listing fails"
