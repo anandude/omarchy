@@ -55,6 +55,26 @@ assert(
   /onIdleTimersEnabledChanged: if \(!idleTimersEnabled\) cancelIdleCycle\(/.test(serviceSource),
   'idle ends a running cycle when both timeouts are set to 0'
 )
+assert(
+  /Hyprland\.toplevels\.values/.test(serviceSource),
+  'idle reads the live toplevels when it asks which screensaver windows exist'
+)
+assert(
+  /id: screensaverLaunchGraceTimer[\s\S]*?onTriggered: \{\s*\n\s*root\.syncScreensaverWindows\(\)/.test(serviceSource),
+  'idle re-checks the live screensaver windows when the launch grace ends'
+)
+assert(
+  /function handleActiveSignal\(\) \{[\s\S]*?syncScreensaverWindows\(\)[\s\S]*?if \(root\.screensaverStartedThisCycle/.test(serviceSource),
+  'idle re-checks the live screensaver windows before holding a cycle open for activity'
+)
+assert(
+  /if \(root\.screensaverWindowCount > 0\) screensaverLaunchGraceTimer\.restart\(\)/.test(serviceSource),
+  'idle re-checks shortly after it holds a cycle open for activity'
+)
+assert(
+  /function handleScreensaverWindowOpened\(address\) \{\s*\n\s*setScreensaverWindow\(address, true\)\s*\n\s*\}/.test(serviceSource),
+  'idle keeps the launch grace re-check when a screensaver window opens'
+)
 
 assertDeepEqual(idle.eventParts({ data: 'a,b,c' }, 2), ['a', 'b', 'c'], 'idle parses raw event data')
 assertDeepEqual(
@@ -77,6 +97,46 @@ assertDeepEqual(
   idle.screensaverWindowsAfter({ a: true }, '', false),
   { windows: { a: true }, count: 1 },
   'idle leaves screensaver windows unchanged without an address'
+)
+
+assertDeepEqual(
+  idle.screensaverWindowsFrom(
+    [{ address: 'a', appId: 'org.omarchy.screensaver' }, { address: 'b', appId: 'org.omarchy.screensaver' }],
+    'org.omarchy.screensaver'
+  ),
+  { windows: { a: true, b: true }, count: 2 },
+  'idle counts the live screensaver windows'
+)
+assertDeepEqual(
+  idle.screensaverWindowsFrom(undefined, 'org.omarchy.screensaver'),
+  { windows: {}, count: 0 },
+  'idle has no screensaver windows without a toplevel list'
+)
+assertDeepEqual(
+  idle.screensaverWindowsFrom(
+    [{ address: 'a', appId: 'foot' }, { address: 'b', appId: 'org.omarchy.screensaver' }],
+    'org.omarchy.screensaver'
+  ),
+  { windows: { b: true }, count: 1 },
+  'idle ignores live windows that are not the screensaver'
+)
+assertDeepEqual(
+  idle.screensaverWindowsFrom([{ appId: 'org.omarchy.screensaver' }, { address: 'a' }], 'org.omarchy.screensaver'),
+  { windows: {}, count: 0 },
+  'idle ignores a live window with no address or screensaver app id'
+)
+assertDeepEqual(
+  idle.screensaverWindowsFrom(
+    [{ address: 'a', appId: 'org.omarchy.screensaver' }, { address: 'a', appId: 'org.omarchy.screensaver' }],
+    'org.omarchy.screensaver'
+  ),
+  { windows: { a: true }, count: 1 },
+  'idle counts a live screensaver address once'
+)
+assertDeepEqual(
+  idle.screensaverWindowsFrom([{ address: 'a', appId: 'org.omarchy.screensaver' }], ''),
+  { windows: {}, count: 0 },
+  'idle matches no window when the screensaver app id is empty'
 )
 JS
 

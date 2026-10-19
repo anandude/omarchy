@@ -63,12 +63,36 @@ function screensaverWindowsAfter(windows, address, visible) {
   }
 }
 
+// The screensaver windows still open, read from the live toplevels rather than
+// from the openwindow events tracked so far. A close event can be missed, and a
+// window tracked from an earlier event that has since gone must not keep a
+// cycle armed, or hold off the launch grace fallback, for the rest of the
+// session.
+function screensaverWindowsFrom(entries, className) {
+  var windows = {}
+  var count = 0
+
+  for (var i = 0; i < (entries ? entries.length : 0); i++) {
+    var entry = entries[i] || {}
+    if (String(entry.appId || "") !== className) continue
+
+    var address = String(entry.address || "")
+    if (!address || windows[address]) continue
+
+    windows[address] = true
+    count++
+  }
+
+  return { windows: windows, count: count }
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     secondsFromConfig: secondsFromConfig,
     firstIdleTimeout: firstIdleTimeout,
     delayAfterFirstIdle: delayAfterFirstIdle,
     eventParts: eventParts,
-    screensaverWindowsAfter: screensaverWindowsAfter
+    screensaverWindowsAfter: screensaverWindowsAfter,
+    screensaverWindowsFrom: screensaverWindowsFrom
   }
 }
