@@ -253,6 +253,30 @@ printf -- '-900000\n' >"$fail_dir/power/BAT0/current_now"
 signed_output=$(OMARCHY_POWER_SUPPLY_PATH="$fail_dir/power" PATH="$fail_dir/bin:$PATH" "$ROOT/bin/omarchy-battery-status" --shell)
 grep -Fx $'rate\t10.8W' <<<"$signed_output" >/dev/null || fail "battery status accepts negative current_now readings"
 
+# With power_now absent the product needs both halves, so a bad voltage read
+# has to fall back to UPower the same way. Otherwise the multiply still yields
+# a number and the panel shows 0W from a voltage of nothing.
+printf '900000\n' >"$fail_dir/power/BAT0/current_now"
+printf 'unknown\n' >"$fail_dir/power/BAT0/voltage_now"
+unknown_voltage_output=$(OMARCHY_POWER_SUPPLY_PATH="$fail_dir/power" PATH="$fail_dir/bin:$PATH" "$ROOT/bin/omarchy-battery-status" --shell)
+grep -Fx $'rate\t5.5W' <<<"$unknown_voltage_output" >/dev/null || fail "battery status keeps the UPower rate when voltage_now is non-numeric"
+
+: >"$fail_dir/power/BAT0/voltage_now"
+empty_voltage_output=$(OMARCHY_POWER_SUPPLY_PATH="$fail_dir/power" PATH="$fail_dir/bin:$PATH" "$ROOT/bin/omarchy-battery-status" --shell)
+grep -Fx $'rate\t5.5W' <<<"$empty_voltage_output" >/dev/null || fail "battery status keeps the UPower rate when voltage_now is empty"
+
+# A node that exists but cannot be read at all, which is the ENODEV shape.
+rm -f "$fail_dir/power/BAT0/voltage_now"
+mkdir "$fail_dir/power/BAT0/voltage_now"
+unreadable_voltage_output=$(OMARCHY_POWER_SUPPLY_PATH="$fail_dir/power" PATH="$fail_dir/bin:$PATH" "$ROOT/bin/omarchy-battery-status" --shell)
+grep -Fx $'rate\t5.5W' <<<"$unreadable_voltage_output" >/dev/null || fail "battery status keeps the UPower rate when voltage_now cannot be read"
+
+# Both halves readable again, so the same harness still shows the live reading.
+rmdir "$fail_dir/power/BAT0/voltage_now"
+printf '12000000\n' >"$fail_dir/power/BAT0/voltage_now"
+recovered_voltage_output=$(OMARCHY_POWER_SUPPLY_PATH="$fail_dir/power" PATH="$fail_dir/bin:$PATH" "$ROOT/bin/omarchy-battery-status" --shell)
+grep -Fx $'rate\t10.8W' <<<"$recovered_voltage_output" >/dev/null || fail "battery status reads current x voltage once voltage_now is readable again"
+
 pass "battery status keeps the UPower rate when sysfs reads fail or are not numeric"
 
 if matches=$(rg -n 'omarchy-battery-(capacity|remaining|remaining-time)' "$ROOT/bin" "$ROOT/test" "$ROOT/shell" "$ROOT/docs"); then
