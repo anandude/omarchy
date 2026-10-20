@@ -26,4 +26,18 @@ assert(/interval: 20000/.test(warmupTimer[0]), 'speedtest outlasts helper warm-u
 
 const stops = (panelSource.match(/warmupTimer\.stop\(\)/g) || []).length
 assert(stops >= 4, 'speedtest settles the guard timer on every exit path')
+
+// Counting the calls is not enough: one path can lose its stop while another
+// grows a duplicate. Check the paths that have to settle the guard themselves.
+const closeHandler = panelSource.match(/function close\(\) \{[\s\S]*?\n  \}/)
+assert(closeHandler && /warmupTimer\.stop\(\)/.test(closeHandler[0]),
+  'speedtest stops the wedged-run guard when the panel closes')
+
+const stopPhaseHandler = panelSource.match(/function stopPhase\(\) \{[\s\S]*?\n  \}/)
+assert(stopPhaseHandler && /warmupTimer\.stop\(\)/.test(stopPhaseHandler[0]),
+  'speedtest stops the wedged-run guard when a phase stops')
+
+const helperExit = panelSource.match(/onExited: function\(exitCode\) \{[\s\S]*?\n    \}/)
+assert(helperExit && /warmupTimer\.stop\(\)/.test(helperExit[0]),
+  'speedtest stops the wedged-run guard when the helper exits')
 JS
