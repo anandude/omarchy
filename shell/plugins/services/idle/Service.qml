@@ -196,6 +196,24 @@ Item {
     root.cancelIdleCycle("screensaver-dismissed")
   }
 
+  // The toplevel list is the live record of which windows exist, and it changes
+  // when the screensaver window goes away even if its closewindow event never
+  // arrives. Watching it there ends a cycle whose close event was missed, so the
+  // pending lock cannot fire later while the user works. A window that is still
+  // up keeps the cycle armed.
+  function handleToplevelsChanged() {
+    if (!root.idledThisCycle || !root.screensaverStartedThisCycle) return
+
+    // The launch window belongs to the grace timer, which is what decides
+    // whether the screensaver came up at all.
+    if (screensaverLaunchGraceTimer.running) return
+
+    syncScreensaverWindows()
+    if (root.screensaverWindowCount > 0) return
+
+    root.cancelIdleCycle("screensaver-closed")
+  }
+
   function eventParts(event, count) {
     return IdleModel.eventParts(event, count)
   }
@@ -355,6 +373,11 @@ Item {
   Connections {
     target: Hyprland
     function onRawEvent(event) { root.handleHyprlandEvent(event) }
+  }
+
+  Connections {
+    target: Hyprland.toplevels
+    function onValuesChanged() { root.handleToplevelsChanged() }
   }
 
   Process {

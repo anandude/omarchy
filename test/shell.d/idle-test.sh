@@ -75,6 +75,18 @@ assert(
   /function handleScreensaverWindowOpened\(address\) \{\s*\n\s*setScreensaverWindow\(address, true\)\s*\n\s*\}/.test(serviceSource),
   'idle keeps the launch grace re-check when a screensaver window opens'
 )
+assert(
+  /target: Hyprland\.toplevels\s*\n\s*function onValuesChanged\(\) \{ root\.handleToplevelsChanged\(\) \}/.test(serviceSource),
+  'idle watches the live toplevel list for a screensaver window that goes away'
+)
+assert(
+  /function handleToplevelsChanged\(\) \{\s*\n\s*if \(!root\.idledThisCycle \|\| !root\.screensaverStartedThisCycle\) return\s*\n\s*\n\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*if \(screensaverLaunchGraceTimer\.running\) return\s*\n\s*\n\s*syncScreensaverWindows\(\)\s*\n\s*if \(root\.screensaverWindowCount > 0\) return\s*\n\s*\n\s*root\.cancelIdleCycle\("screensaver-closed"\)/.test(serviceSource),
+  'idle ends a cycle whose screensaver window closed without a closewindow event'
+)
+assert(
+  /if \(screensaverLaunchGraceTimer\.running\) return/.test(serviceSource),
+  'idle leaves the launch window to the grace timer'
+)
 
 assertDeepEqual(idle.eventParts({ data: 'a,b,c' }, 2), ['a', 'b', 'c'], 'idle parses raw event data')
 assertDeepEqual(
