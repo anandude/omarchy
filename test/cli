@@ -686,10 +686,13 @@ while time.time() < deadline:
             break
         data += chunk
         if b'\033]112\007' in data and not os.path.exists(seen):
-            open(seen, 'w').close()
+            # Log the pane write before creating the marker: the fake tmux
+            # wakes on the marker, so the marker must not appear while the
+            # 'pane' entry is still missing from the order log.
             if env.get('TMUX_ORDER_LOG'):
                 with open(env['TMUX_ORDER_LOG'], 'a') as order:
                     order.write('pane\n')
+            open(seen, 'w').close()
     elif proc.poll() is not None:
         break
 
