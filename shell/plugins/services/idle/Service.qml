@@ -204,6 +204,11 @@ Item {
   // arrives. Watching it there ends a cycle whose close event was missed, so the
   // pending lock cannot fire later while the user works. A window that is still
   // up keeps the cycle armed.
+  //
+  // Every window the live list says has gone is handed to the same handler the
+  // closewindow path uses, rather than cancelling here: what a dismissal means
+  // stays in one place, and a reason recorded for it stays the same whichever
+  // path noticed first.
   function handleToplevelsChanged() {
     if (!root.idledThisCycle || !root.screensaverStartedThisCycle) return
 
@@ -211,10 +216,14 @@ Item {
     // whether the screensaver came up at all.
     if (screensaverLaunchGraceTimer.running) return
 
+    var tracked = root.screensaverWindows
     syncScreensaverWindows()
-    if (root.screensaverWindowCount > 0) return
 
-    root.cancelIdleCycle("screensaver-closed")
+    var gone = []
+    for (var address in tracked) {
+      if (tracked[address] && !root.screensaverWindows[address]) gone.push(address)
+    }
+    for (var i = 0; i < gone.length; i++) root.handleScreensaverWindowClosed(gone[i])
   }
 
   function eventParts(event, count) {

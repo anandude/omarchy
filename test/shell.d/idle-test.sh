@@ -80,8 +80,16 @@ assert(
   'idle watches the live toplevel list for a screensaver window that goes away'
 )
 assert(
-  /function handleToplevelsChanged\(\) \{\s*\n\s*if \(!root\.idledThisCycle \|\| !root\.screensaverStartedThisCycle\) return\s*\n\s*\n\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*if \(screensaverLaunchGraceTimer\.running\) return\s*\n\s*\n\s*syncScreensaverWindows\(\)\s*\n\s*if \(root\.screensaverWindowCount > 0\) return\s*\n\s*\n\s*root\.cancelIdleCycle\("screensaver-closed"\)/.test(serviceSource),
-  'idle ends a cycle whose screensaver window closed without a closewindow event'
+  /function handleToplevelsChanged\(\) \{[\s\S]*?if \(screensaverLaunchGraceTimer\.running\) return\s*\n\s*\n\s*var tracked = root\.screensaverWindows\s*\n\s*syncScreensaverWindows\(\)/.test(serviceSource),
+  'idle compares the live list against the tracked windows without cancelling on its own'
+)
+assert(
+  /function handleToplevelsChanged\(\) \{[\s\S]*?root\.handleScreensaverWindowClosed\(gone\[i\]\)/.test(serviceSource),
+  'idle hands a screensaver window that vanished without a closewindow to the close handler'
+)
+assert(
+  /root\.cancelIdleCycle\("screensaver-dismissed"\)/.test(serviceSource),
+  'idle keeps one dismissal decision for the closeevent and toplevels paths'
 )
 assert(
   /if \(screensaverLaunchGraceTimer\.running\) return/.test(serviceSource),

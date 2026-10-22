@@ -68,6 +68,7 @@ function screensaverWindowsAfter(windows, address, visible) {
 // window tracked from an earlier event that has since gone must not keep a
 // cycle armed, or hold off the launch grace fallback, for the rest of the
 // session.
+//
 // A toplevel whose wayland handle has not been attached yet reports a null app
 // id. That is unknown, not absent: the handle arrives milliseconds after the
 // window maps, and reading it as "not the screensaver" drops a window that is
