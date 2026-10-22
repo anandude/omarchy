@@ -152,10 +152,13 @@ Item {
         var toplevel = toplevels[i]
         entries.push({
           address: toplevel ? String(toplevel.address || "") : "",
-          appId: toplevel && toplevel.wayland ? String(toplevel.wayland.appId || "") : ""
+          // Null, not empty, when the wayland handle is not attached yet: the
+          // app id is unknown at that point, and the model keeps a window the
+          // raw openwindow already tracked rather than dropping it.
+          appId: toplevel && toplevel.wayland ? String(toplevel.wayland.appId || "") : null
         })
       }
-      return IdleModel.screensaverWindowsFrom(entries, root.screensaverClass)
+      return IdleModel.screensaverWindowsFrom(entries, root.screensaverClass, root.screensaverWindows)
     } catch (error) {
       return null
     }

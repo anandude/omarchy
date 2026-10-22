@@ -150,6 +150,38 @@ assertDeepEqual(
   { windows: {}, count: 0 },
   'idle matches no window when the screensaver app id is empty'
 )
+assertDeepEqual(
+  idle.screensaverWindowsFrom([{ address: 'a', appId: null }], 'org.omarchy.screensaver', { a: true }),
+  { windows: { a: true }, count: 1 },
+  'idle keeps a live window with no app id yet that the events already tracked'
+)
+assertDeepEqual(
+  idle.screensaverWindowsFrom([{ address: 'a', appId: null }], 'org.omarchy.screensaver', {}),
+  { windows: {}, count: 0 },
+  'idle does not turn a live window with no app id yet into a screensaver window'
+)
+assertDeepEqual(
+  idle.screensaverWindowsFrom([{ address: 'a', appId: null }], 'org.omarchy.screensaver'),
+  { windows: {}, count: 0 },
+  'idle keeps no unassociated window without a tracked set'
+)
+assertDeepEqual(
+  idle.screensaverWindowsFrom(
+    [{ address: 'a', appId: null }, { address: 'b', appId: 'foot' }],
+    'org.omarchy.screensaver',
+    { a: true, b: true }
+  ),
+  { windows: { a: true }, count: 1 },
+  'idle still drops an unassociated window that is not the screensaver'
+)
+assert(
+  /appId: toplevel && toplevel\.wayland \? String\(toplevel\.wayland\.appId \|\| ""\) : null/.test(serviceSource),
+  'idle reports an unattached wayland handle as an unknown app id rather than an absent one'
+)
+assert(
+  /screensaverWindowsFrom\(entries, root\.screensaverClass, root\.screensaverWindows\)/.test(serviceSource),
+  'idle gives the live read the tracked windows so it keeps ones it cannot identify yet'
+)
 JS
 
 test_tmp=$(mktemp -d)
