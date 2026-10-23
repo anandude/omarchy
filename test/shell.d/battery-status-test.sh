@@ -269,7 +269,7 @@ numeric_output=$(OMARCHY_POWER_SUPPLY_PATH="$fail_dir/power" PATH="$fail_dir/bin
 grep -Fx $'rate\t20.5W' <<<"$numeric_output" >/dev/null || fail "battery status prefers numeric power_now over UPower"
 
 # An empty power_now read falls through to current_now x voltage_now rather
-# than skipping straight to UPower (#12649 comparison).
+# than skipping straight to UPower.
 : >"$fail_dir/power/BAT0/power_now"
 fallthrough_output=$(OMARCHY_POWER_SUPPLY_PATH="$fail_dir/power" PATH="$fail_dir/bin:$PATH" "$ROOT/bin/omarchy-battery-status" --shell)
 grep -Fx $'rate\t10.8W' <<<"$fallthrough_output" >/dev/null || fail "battery status falls through to current_now when power_now is empty"
