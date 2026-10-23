@@ -90,23 +90,23 @@ pass "power profile init restores the autodetected preference"
 
 # A failed detection is unknown, not "on AC": it must refuse to set a profile
 # rather than fail-open to performance on a machine booting on battery (#12734).
-last_before=$(tail -n 1 "$tmp_dir/calls")
+calls_before=$(<"$tmp_dir/calls")
 if BUSCTL_FAIL=1 "$ROOT/bin/omarchy-powerprofiles-set" autodetect; then
   fail "power profile autodetect fails when detection fails"
 fi
-[[ $(tail -n 1 "$tmp_dir/calls") == "$last_before" ]] || fail "failed autodetect changes no profile"
+[[ $(<"$tmp_dir/calls") == "$calls_before" ]] || fail "failed autodetect changes no profile"
 pass "power profile autodetect refuses to guess when detection fails"
 
 # A wedged UPower must not stall autodetect: the per-attempt deadline bounds
 # the whole retry window.
-last_before=$(tail -n 1 "$tmp_dir/calls")
+calls_before=$(<"$tmp_dir/calls")
 start=$SECONDS
 if BUSCTL_HANG=1 "$ROOT/bin/omarchy-powerprofiles-set" autodetect; then
   fail "power profile autodetect fails when detection hangs"
 fi
 elapsed=$((SECONDS - start))
 (( elapsed < 25 )) || fail "hung detection refuses within the retry window (took ${elapsed}s)"
-[[ $(tail -n 1 "$tmp_dir/calls") == "$last_before" ]] || fail "hung autodetect changes no profile"
+[[ $(<"$tmp_dir/calls") == "$calls_before" ]] || fail "hung autodetect changes no profile"
 pass "power profile autodetect bounds a hung detection"
 
 # A not-yet-ready UPower recovers within the retry window.
