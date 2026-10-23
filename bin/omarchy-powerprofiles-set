@@ -24,7 +24,8 @@ case "$action" in
     # method reply, so without it a wedged UPower stalls every attempt.
     on_battery=""
     for (( attempt = 1; attempt <= 5; attempt++ )); do
-      if on_battery=$(timeout 2s busctl get-property org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower OnBattery 2>/dev/null); then
+      if reply=$(timeout 2s busctl get-property org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower OnBattery 2>/dev/null); then
+        on_battery=$reply
         break
       fi
       sleep 0.5
